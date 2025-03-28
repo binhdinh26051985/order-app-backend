@@ -1,3 +1,10 @@
+console.log('Starting server with environment:', {
+  NODE_ENV: process.env.NODE_ENV,
+  PORT: process.env.PORT,
+  DB_HOST: process.env.DB_HOST ? 'set' : 'missing',
+  JWT_SECRET: process.env.JWT_SECRET ? 'set' : 'missing'
+});
+
 const fs = require('fs'); // Add this at the top of your backend file
 require('dotenv').config(); // Load environment variables from .env file
 const express = require('express');
