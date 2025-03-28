@@ -55,17 +55,31 @@ app.use(cors({
     }
   });
 
-
-const db = mysql.createConnection({
+// Replace your db connection with this more robust version
+const db = mysql.createPool({
   host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  ssl: process.env.NODE_ENV === 'production' ? {
-    rejectUnauthorized: true
+  port: process.env.DB_PORT || 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  ssl: process.env.DB_SSL === 'true' ? { 
+    rejectUnauthorized: false // Temporarily disable for testing
   } : null
 });
+
+// Test connection
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error('Database connection failed:', err);
+    process.exit(1);
+  }
+  console.log('Database connected');
+  connection.release();
+});
+
 
 // Connect to MySQL
 db.connect((err) => {
