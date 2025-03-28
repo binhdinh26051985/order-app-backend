@@ -103,7 +103,8 @@ function authenticateToken(req, res, next) {
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.sendStatus(401);
 
-    jwt.verify(token, 'your_secret_key', (err, user) => {
+  // Change all instances of 'your_secret_key' to:
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err) return res.sendStatus(403);
         req.user = user;
         next();
@@ -149,7 +150,7 @@ app.post('/login', (req, res) => {
         }
 
         // Generate a JWT token
-        const token = jwt.sign({ id: user.id }, 'your_secret_key', { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.json({ token });
     });
 });
