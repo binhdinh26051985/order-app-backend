@@ -29,12 +29,17 @@ const app = express();
 app.use(express.json());
 app.use(cors()); // Enable CORS for all routes
 
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [
-      "https://your-frontend-domain.com",
-      "https://your-vercel-app.vercel.app"
+//const allowedOrigins = process.env.NODE_ENV === 'production'
+  //? [
+     // "https://your-frontend-domain.com",
+     // "https://your-vercel-app.vercel.app"
     ]
-  : ["http://localhost:5173"];
+ // : ["http://localhost:5173"];
+
+const allowedOrigins = [
+  'http://localhost:5173', // Your Vite dev server
+  'https://your-production-frontend.com' // Your production frontend
+];
 
 app.use(cors({
   origin: allowedOrigins,
