@@ -42,18 +42,30 @@ app.use(cors({
     //database: process.env.DB_NAME
 //});
 
-const db = mysql.createConnection({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT, // Add this line
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    ssl: {
-      ca: fs.readFileSync(process.env.DB_SSL_CA) // For SSL certificate
+//const db = mysql.createConnection({
+    //host: process.env.DB_HOST,
+    //port: process.env.DB_PORT, // Add this line
+    //user: process.env.DB_USER,
+    //password: process.env.DB_PASSWORD,
+    //database: process.env.DB_NAME,
+    //ssl: {
+      //ca: fs.readFileSync(process.env.DB_SSL_CA) // For SSL certificate
       // OR if using standard certs:
       // rejectUnauthorized: true
     }
   });
+
+
+const db = mysql.createConnection({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  ssl: process.env.NODE_ENV === 'production' ? {
+    rejectUnauthorized: true
+  } : null
+});
 
 // Connect to MySQL
 db.connect((err) => {
