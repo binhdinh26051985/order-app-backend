@@ -94,6 +94,12 @@ db.connect((err) => {
     console.log('Connected to MySQL database');
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Server Error');
+});
+
 // Middleware to verify JWT
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
