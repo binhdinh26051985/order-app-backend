@@ -62,7 +62,7 @@ app.use(cors({
     }
   });
 
-// Replace your db connection with this more robust version
+// Remove ALL other db connection code and keep ONLY this:
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -73,9 +73,22 @@ const db = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   ssl: process.env.DB_SSL === 'true' ? { 
-    rejectUnauthorized: false // Temporarily disable for testing
+    rejectUnauthorized: false
   } : null
 });
+
+// Test connection
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error('Database connection failed:', err);
+    // Don't exit in production - let the server try to reconnect
+    if (process.env.NODE_ENV !== 'production') process.exit(1);
+  } else {
+    console.log('Database connected');
+    connection.release();
+  }
+});
+
 
 // Test connection
 db.getConnection((err, connection) => {
