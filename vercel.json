@@ -3,11 +3,7 @@
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node",
-      "config": { 
-        "maxLambdaSize": "50mb",
-        "includeFiles": [".env"]
-      }
+      "use": "@vercel/node"
     }
   ],
   "routes": [
