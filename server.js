@@ -29,50 +29,18 @@ const app = express();
 app.use(express.json());
 app.use(cors()); // Enable CORS for all routes
 
-// Or with more specific configuration
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [
+      "https://your-frontend-domain.com",
+      "https://your-vercel-app.vercel.app"
+    ]
+  : ["http://localhost:5173"];
+
 app.use(cors({
-    origin: ["http://localhost:5173"],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-}))
-
-//app.use(cors({
-  //origin: [
-    //"http://localhost:5173", 
-    //"https://your-frontend-domain.com"
-  //],
-  //methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  //credentials: true
-//}))
-
-// MySQL connection
-//const db = mysql.createConnection({
-    //host: 'localhost',
-    //user: 'root', // Replace with your MySQL username
-    //password: '', // Replace with your MySQL password
-    //database: 'orderapp'
-//});
-
-// MySQL connection using environment variables
-//const db = mysql.createConnection({
-    //host: process.env.DB_HOST,
-    //user: process.env.DB_USER,
-    //password: process.env.DB_PASSWORD,
-    //database: process.env.DB_NAME
-//});
-
-//const db = mysql.createConnection({
-    //host: process.env.DB_HOST,
-    //port: process.env.DB_PORT, // Add this line
-    //user: process.env.DB_USER,
-    //password: process.env.DB_PASSWORD,
-    //database: process.env.DB_NAME,
-    //ssl: {
-      //ca: fs.readFileSync(process.env.DB_SSL_CA) // For SSL certificate
-      // OR if using standard certs:
-      // rejectUnauthorized: true
-    }
-  });
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
 
 // Remove ALL other db connection code and keep ONLY this:
 const db = mysql.createPool({
