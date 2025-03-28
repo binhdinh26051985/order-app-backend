@@ -9,7 +9,6 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });
 
-
 console.log('Starting server with environment:', {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
@@ -17,8 +16,8 @@ console.log('Starting server with environment:', {
   JWT_SECRET: process.env.JWT_SECRET ? 'set' : 'missing'
 });
 
-const fs = require('fs'); // Add this at the top of your backend file
-require('dotenv').config(); // Load environment variables from .env file
+const fs = require('fs');
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2');
 const jwt = require('jsonwebtoken');
@@ -26,31 +25,20 @@ const bcrypt = require('bcryptjs');
 const cors = require('cors');
 
 const app = express();
-app.use(express.json());
-app.use(cors()); // Enable CORS for all routes
 
-//const allowedOrigins = process.env.NODE_ENV === 'production'
-  //? [
-     // "https://your-frontend-domain.com",
-     // "https://your-vercel-app.vercel.app"
-    ]
- // : ["http://localhost:5173"];
-
+// Enhanced CORS configuration
 const allowedOrigins = [
-  'http://localhost:5173', // Your Vite dev server
-  'https://your-production-frontend.com' // Your production frontend
+  'http://localhost:5173',
+  'https://your-production-frontend.com'
 ];
 
+app.use(express.json());
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
     } else {
-      const msg = `The CORS policy for this site does not allow access from ${origin}`;
-      return callback(new Error(msg), false);
+      callback(new Error(`The CORS policy blocks access from ${origin}`));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -58,7 +46,7 @@ app.use(cors({
   credentials: true
 }));
 
-// Remove ALL other db connection code and keep ONLY this:
+// Robust database connection
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -73,137 +61,155 @@ const db = mysql.createPool({
   } : null
 });
 
-// Test connection
-db.getConnection((err, connection) => {
-  if (err) {
-    console.error('Database connection failed:', err);
-    // Don't exit in production - let the server try to reconnect
-    if (process.env.NODE_ENV !== 'production') process.exit(1);
-  } else {
-    console.log('Database connected');
-    connection.release();
+// Database connection test with retry logic
+function testDatabaseConnection(attempt = 1) {
+  db.getConnection((err, connection) => {
+    if (err) {
+      console.error(`Database connection failed (attempt ${attempt}):`, err.message);
+      
+      if (attempt < 3) {
+        setTimeout(() => testDatabaseConnection(attempt + 1), 2000 * attempt);
+      } else if (process.env.NODE_ENV !== 'production') {
+        process.exit(1);
+      }
+    } else {
+      console.log('Database connected successfully');
+      connection.release();
+    }
+  });
+}
+testDatabaseConnection();
+
+// Enhanced error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Server Error',
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
+
+// JWT authentication middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.split(' ')[1];
+  
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      console.error('JWT verification error:', err);
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// API Endpoints with improved error handling
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Register endpoint
+app.post('/register', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    const [users] = await db.promise().query('SELECT * FROM users WHERE username = ?', [username]);
+    if (users.length > 0) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [result] = await db.promise().query(
+      'INSERT INTO users (username, password) VALUES (?, ?)',
+      [username, hashedPassword]
+    );
+
+    res.status(201).json({ 
+      message: 'User registered successfully',
+      userId: result.insertId
+    });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send('Server Error');
-});
-
-// Middleware to verify JWT
-function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.sendStatus(401);
-
-  // Change all instances of 'your_secret_key' to:
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
-        req.user = user;
-        next();
-    });
-}
-
-// Register endpoint
-app.post('/register', (req, res) => {
-    const { username, password } = req.body;
-
-    // Check if the username already exists
-    db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
-        if (err) throw err;
-        if (results.length > 0) {
-            return res.status(400).send('Username already exists');
-        }
-
-        // Hash the password
-        const hashedPassword = bcrypt.hashSync(password, 10);
-
-        // Insert the new user into the database
-        db.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword], (err, results) => {
-            if (err) throw err;
-            res.status(201).send('User registered successfully');
-        });
-    });
-});
-
 // Login endpoint
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
+  try {
     const { username, password } = req.body;
+    
+    const [users] = await db.promise().query('SELECT * FROM users WHERE username = ?', [username]);
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
-    // Fetch user from the database
-    db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
-        if (err) throw err;
-        if (results.length === 0) return res.status(400).send('User not found');
+    const user = users[0];
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
-        const user = results[0];
-
-        // Compare the provided password with the stored hash
-        if (!bcrypt.compareSync(password, user.password)) {
-            return res.status(400).send('Invalid password');
-        }
-
-        // Generate a JWT token
-        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.json({ token });
-    });
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.json({ token });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Fetch orders endpoint
-app.get('/orders', authenticateToken, (req, res) => {
-    const userId = req.user.id;
-
-    // Fetch orders for the logged-in user
-    db.query('SELECT * FROM orders WHERE user_id = ?', [userId], (err, results) => {
-        if (err) throw err;
-        res.json(results);
-    });
+// Order endpoints
+app.get('/orders', authenticateToken, async (req, res) => {
+  try {
+    const [orders] = await db.promise().query(
+      'SELECT * FROM orders WHERE user_id = ?', 
+      [req.user.id]
+    );
+    res.json(orders);
+  } catch (err) {
+    console.error('Get orders error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Create order endpoint
-app.post('/orders', authenticateToken, (req, res) => {
+app.post('/orders', authenticateToken, async (req, res) => {
+  try {
     const { order_details } = req.body;
-    const userId = req.user.id;
-
-    // Insert the new order into the database
-    db.query('INSERT INTO orders (user_id, order_details) VALUES (?, ?)', [userId, order_details], (err, results) => {
-        if (err) throw err;
-        res.json({ id: results.insertId, user_id: userId, order_details });
+    const [result] = await db.promise().query(
+      'INSERT INTO orders (user_id, order_details) VALUES (?, ?)',
+      [req.user.id, order_details]
+    );
+    res.json({ 
+      id: result.insertId, 
+      user_id: req.user.id, 
+      order_details 
     });
+  } catch (err) {
+    console.error('Create order error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Update order endpoint
-app.put('/orders/:id', authenticateToken, (req, res) => {
-    const { order_details } = req.body;
-    const orderId = req.params.id;
-    const userId = req.user.id;
-
-    // Update the order in the database
-    db.query('UPDATE orders SET order_details = ? WHERE id = ? AND user_id = ?', [order_details, orderId, userId], (err, results) => {
-        if (err) throw err;
-        if (results.affectedRows === 0) return res.status(404).send('Order not found');
-        res.json({ id: orderId, user_id: userId, order_details });
-    });
-});
-
-// Delete order endpoint
-app.delete('/orders/:id', authenticateToken, (req, res) => {
-    const orderId = req.params.id;
-    const userId = req.user.id;
-
-    // Delete the order from the database
-    db.query('DELETE FROM orders WHERE id = ? AND user_id = ?', [orderId, userId], (err, results) => {
-        if (err) throw err;
-        if (results.affectedRows === 0) return res.status(404).send('Order not found');
-        res.sendStatus(204);
-    });
-});
-
-// Start the server
-//const PORT = 3000;
+// Server startup
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+}).on('error', err => {
+  console.error('Server failed to start:', err);
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down gracefully');
+  server.close(() => {
+    console.log('Server closed');
+    db.end();
+    process.exit(0);
+  });
 });
