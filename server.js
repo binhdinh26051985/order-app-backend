@@ -1,3 +1,15 @@
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+});
+
+
 console.log('Starting server with environment:', {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
