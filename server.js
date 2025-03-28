@@ -90,22 +90,6 @@ db.getConnection((err, connection) => {
 });
 
 
-// Test connection
-db.getConnection((err, connection) => {
-  if (err) {
-    console.error('Database connection failed:', err);
-    process.exit(1);
-  }
-  console.log('Database connected');
-  connection.release();
-});
-
-
-// Connect to MySQL
-db.connect((err) => {
-    if (err) throw err;
-    console.log('Connected to MySQL database');
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
