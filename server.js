@@ -71,16 +71,41 @@ const db = mysql.createPool({
 function testDatabaseConnection(attempt = 1) {
   db.getConnection((err, connection) => {
     if (err) {
-      console.error(`Database connection failed (attempt ${attempt}):`, err.message);
+      console.error(`Database connection failed (attempt ${attempt}):`, err);
+      
+      // More detailed error logging
+      if (err.code === 'ETIMEDOUT') {
+        console.error('Connection timeout - check your host/port');
+      } else if (err.code === 'ER_ACCESS_DENIED_ERROR') {
+        console.error('Authentication failed - check username/password');
+      } else if (err.code === 'ENOTFOUND') {
+        console.error('Host not found - check DB_HOST');
+      }
       
       if (attempt < 3) {
         setTimeout(() => testDatabaseConnection(attempt + 1), 2000 * attempt);
-      } else if (process.env.NODE_ENV !== 'production') {
-        process.exit(1);
+      } else {
+        console.error('Giving up after 3 attempts');
+        if (process.env.NODE_ENV !== 'production') {
+          process.exit(1);
+        }
       }
     } else {
-      console.log('Database connected successfully');
+      console.log('Successfully connected to TiDB Cloud');
       connection.release();
+      
+      // Verify tables exist
+      connection.query(`
+        SELECT COUNT(*) as table_count 
+        FROM information_schema.tables 
+        WHERE table_schema = ? 
+        AND table_name IN ('users', 'orders')
+      `, [process.env.DB_NAME], (err, results) => {
+        if (err) console.error('Table verification failed:', err);
+        else if (results[0].table_count !== 2) {
+          console.warn('Warning: Some tables are missing in the database');
+        }
+      });
     }
   });
 }
