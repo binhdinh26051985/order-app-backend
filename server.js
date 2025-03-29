@@ -289,6 +289,26 @@ if (process.env.NODE_ENV !== 'production') {
     });
   });
 }
-
+// Add this endpoint to test database connectivity
+app.get('/db-check', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT 1 + 1 AS result');
+    res.json({ 
+      status: 'success',
+      database: 'connected',
+      result: rows[0].result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Database Connection Test Failed:', err);
+    res.status(500).json({
+      status: 'error',
+      database: 'disconnected',
+      error: err.message,
+      code: err.code,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 // Export for Vercel serverless
 module.exports = app;
