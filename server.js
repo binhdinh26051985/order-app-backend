@@ -17,6 +17,7 @@ console.log('Starting server with environment:', {
 });
 
 const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2');
@@ -49,16 +50,21 @@ app.use(cors({
 // Robust database connection
 const db = mysql.createPool({
   host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  port: process.env.DB_PORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  ssl: process.env.DB_SSL === 'true' ? { 
-    rejectUnauthorized: false
-  } : null
+  ssl: {
+    ca: fs.readFileSync(path.resolve(process.env.DB_SSL_CA)),
+    rejectUnauthorized: true
+  },
+  // TiDB specific configuration
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+  timezone: '+00:00' // Use UTC timezone
 });
 
 // Database connection test with retry logic
