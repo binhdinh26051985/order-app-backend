@@ -234,13 +234,19 @@ app.post('/login', async (req, res) => {
 // Order endpoints
 app.get('/orders', authenticateToken, async (req, res) => {
   try {
+    console.log(`Fetching orders for user ${req.user.id}`);
     const [orders] = await pool.query(
       'SELECT id, order_details, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC',
       [req.user.id]
     );
+    console.log(`Found ${orders.length} orders`);
     res.json(orders);
   } catch (err) {
-    console.error('Get orders error:', err);
+    console.error('Get orders error details:', {
+      error: err,
+      sqlMessage: err.sqlMessage,
+      sql: err.sql
+    });
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
