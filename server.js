@@ -234,20 +234,40 @@ app.post('/login', async (req, res) => {
 // Order endpoints
 app.get('/orders', authenticateToken, async (req, res) => {
   try {
-    console.log(`Fetching orders for user ${req.user.id}`);
+    // Debug: Log the user ID from the token
+    console.log(`User making request:`, req.user);
+
+    // 1. First verify the user exists
+    const [users] = await pool.query('SELECT id FROM users WHERE id = ?', [req.user.id]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // 2. Fetch orders
     const [orders] = await pool.query(
-      'SELECT id, order_details, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC',
+      `SELECT id, order_details, created_at 
+       FROM orders 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC`,
       [req.user.id]
     );
-    console.log(`Found ${orders.length} orders`);
+
+    // Debug: Log the raw SQL query
+    console.log(`Executed query: SELECT ... WHERE user_id = ${req.user.id}`);
+
     res.json(orders);
   } catch (err) {
-    console.error('Get orders error details:', {
-      error: err,
-      sqlMessage: err.sqlMessage,
-      sql: err.sql
+    console.error('Full error:', {
+      message: err.message,
+      code: err.code,
+      sqlState: err.sqlState,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
-    res.status(500).json({ error: 'Failed to fetch orders' });
+    
+    res.status(500).json({ 
+      error: 'Database operation failed',
+      ...(process.env.NODE_ENV === 'development' && { details: err.message })
+    });
   }
 });
 
