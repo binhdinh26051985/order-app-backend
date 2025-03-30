@@ -233,45 +233,14 @@ app.post('/login', async (req, res) => {
 });
 
 // Order endpoints
-app.get('/orders', authenticateToken, async (req, res) => {
-  const userId = req.user.id;
-  
-  try {
-    // 1. Validate user exists
-    const [user] = await pool.query('SELECT 1 FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (!user.length) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+app.get('/orders', authenticateToken, (req, res) => {
+    const userId = req.user.id;
 
-    // 2. Fetch orders with error-prone columns wrapped
-    const [orders] = await pool.query(`
-      SELECT 
-        id, 
-        order_details, 
-        created_at 
-      FROM orders 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC
-    `, [userId]);
-
-    // 3. Return empty array if no orders (not an error)
-    res.json(orders || []);
-    
-  } catch (err) {
-    console.error('Database Error:', {
-      userId,
-      error: err.message,
-      sql: err.sql, 
-      stack: err.stack
+    // Fetch orders for the logged-in user
+    db.query('SELECT * FROM orders WHERE user_id = ?', [userId], (err, results) => {
+        if (err) throw err;
+        res.json(results);
     });
-    
-    res.status(500).json({ 
-      error: 'Failed to fetch orders',
-      ...(process.env.NODE_ENV === 'development' && { 
-        details: err.message 
-      })
-    });
-  }
 });
 
 app.post('/orders', authenticateToken, async (req, res) => {
