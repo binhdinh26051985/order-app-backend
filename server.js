@@ -40,9 +40,20 @@ try {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    ssl: process.env.DB_SSL_CA ? {
-      ca: fs.readFileSync(process.env.DB_SSL_CA)
-    } : null
+    // Change this in your database configuration:
+ssl: process.env.DB_SSL_CA ? {
+  ca: fs.readFileSync(process.env.DB_SSL_CA)
+} : null
+
+// To either:
+ssl: process.env.DB_SSL_CA ? {
+  ca: fs.readFileSync(path.join(__dirname, process.env.DB_SSL_CA))
+} : null
+
+// OR if you don't need SSL (for local development):
+ssl: process.env.NODE_ENV === 'production' ? {
+  rejectUnauthorized: true
+} : null
   });
 
   // Test the connection
