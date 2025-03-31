@@ -105,32 +105,52 @@ app.post('/register', async (req, res, next) => {
 });
 
 // Login endpoint with async/await
-app.post('/login', async (req, res, next) => {
+app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-
-    // Fetch user from the database
-    const [results] = await db.execute('SELECT * FROM users WHERE username = ?', [username]);
-    if (results.length === 0) return res.status(400).send('User not found');
-
-    const user = results[0];
-
-    // Compare the provided password with the stored hash
-    if (!bcrypt.compareSync(password, user.password)) {
-      return res.status(400).send('Invalid password');
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    // Generate a JWT token
+    console.log('Login attempt for:', username); // Debug log
+
+    const [users] = await db.execute('SELECT * FROM users WHERE username = ?', [username]);
+    
+    if (users.length === 0) {
+      console.log('User not found:', username); // Debug log
+      return res.status(401).json({ error: 'Invalid credentials' }); // Don't reveal if user exists
+    }
+
+    const user = users[0];
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    
+    console.log('Password match:', passwordMatch); // Debug log
+
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
     const token = jwt.sign(
-      { id: user.id },
-      process.env.JWT_SECRET || '123456',
+      { id: user.id, username: user.username },
+      process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
-    res.json({ token });
-  } catch (err) {
-    next(err);
+
+    res.json({ 
+      token,
+      user: { id: user.id, username: user.username }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
+
 
 // Fetch orders endpoint with async/await
 app.get('/orders', authenticateToken, async (req, res, next) => {
