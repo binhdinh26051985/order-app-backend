@@ -31,49 +31,14 @@ const cors = require('cors');
 
 const app = express();
 
-// Enhanced CORS configuration
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://your-production-frontend.com'
-];
-
-app.use(express.json());
+// In server.js
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`The CORS policy blocks access from ${origin}`));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: 'http://localhost:5173'
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  exposedHeaders: ['Authorization']
 }));
 
-// SSL Configuration
-let sslConfig;
-try {
-  if (process.env.DB_SSL_CERT_CONTENT) {
-    // For Vercel - use environment variable with certificate content
-    sslConfig = {
-      ca: Buffer.from(process.env.DB_SSL_CERT_CONTENT, 'base64').toString(),
-      rejectUnauthorized: true
-    };
-  } else if (process.env.DB_SSL_CA && fs.existsSync(path.resolve(process.env.DB_SSL_CA))) {
-    // For local development with certificate file
-    sslConfig = {
-      ca: fs.readFileSync(path.resolve(process.env.DB_SSL_CA)),
-      rejectUnauthorized: true
-    };
-  } else {
-    console.warn('SSL certificate not properly configured, using insecure connection');
-    sslConfig = { rejectUnauthorized: false };
-  }
-} catch (err) {
-  console.error('SSL configuration error:', err);
-  sslConfig = { rejectUnauthorized: false };
-}
 
 // Database connection pool
 const pool = mysql.createPool({
