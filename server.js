@@ -1,166 +1,220 @@
-const fs = require('fs'); // Add this at the top of your backend file
-require('dotenv').config(); // Load environment variables from .env file
+const fs = require('fs');
+require('dotenv').config();
 const express = require('express');
-const mysql = require('mysql2');
+const mysql = require('mysql2/promise'); // Using promise-based version
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
 
 const app = express();
 app.use(express.json());
-app.use(cors()); // Enable CORS for all routes
 
-// Or with more specific configuration
+// Configure CORS properly for Vercel
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.FRONTEND_URL // Add your Vercel frontend URL here
+].filter(Boolean);
+
 app.use(cors({
-    origin: ["http://localhost:5173"],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-}))
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
 
-// MySQL connection
-//const db = mysql.createConnection({
-    //host: 'localhost',
-    //user: 'root', // Replace with your MySQL username
-    //password: '', // Replace with your MySQL password
-    //database: 'orderapp'
-//});
-
-// MySQL connection using environment variables
-//const db = mysql.createConnection({
-    //host: process.env.DB_HOST,
-    //user: process.env.DB_USER,
-    //password: process.env.DB_PASSWORD,
-    //database: process.env.DB_NAME
-//});
-
-const db = mysql.createConnection({
+// Database connection with better error handling
+let db;
+try {
+  db = mysql.createPool({
     host: process.env.DB_HOST,
-    port: process.env.DB_PORT, // Add this line
+    port: process.env.DB_PORT,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    ssl: {
-      ca: fs.readFileSync(process.env.DB_SSL_CA) // For SSL certificate
-      // OR if using standard certs:
-      // rejectUnauthorized: true
-    }
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    ssl: process.env.DB_SSL_CA ? {
+      ca: fs.readFileSync(process.env.DB_SSL_CA)
+    } : null
   });
 
-// Connect to MySQL
-db.connect((err) => {
-    if (err) throw err;
-    console.log('Connected to MySQL database');
+  // Test the connection
+  db.getConnection()
+    .then(connection => {
+      console.log('Connected to MySQL database');
+      connection.release();
+    })
+    .catch(err => {
+      console.error('Database connection error:', err);
+    });
+} catch (err) {
+  console.error('Database configuration error:', err);
+}
+
+// Improved error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
 });
 
 // Middleware to verify JWT
 function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.sendStatus(401);
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.sendStatus(401);
 
-    jwt.verify(token, '123456', (err, user) => {
-        if (err) return res.sendStatus(403);
-        req.user = user;
-        next();
-    });
+  jwt.verify(token, process.env.JWT_SECRET || '123456', (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
 }
 
-// Register endpoint
-app.post('/register', (req, res) => {
+// Register endpoint with async/await
+app.post('/register', async (req, res, next) => {
+  try {
     const { username, password } = req.body;
 
     // Check if the username already exists
-    db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
-        if (err) throw err;
-        if (results.length > 0) {
-            return res.status(400).send('Username already exists');
-        }
+    const [results] = await db.execute('SELECT * FROM users WHERE username = ?', [username]);
+    if (results.length > 0) {
+      return res.status(400).send('Username already exists');
+    }
 
-        // Hash the password
-        const hashedPassword = bcrypt.hashSync(password, 10);
+    // Hash the password
+    const hashedPassword = bcrypt.hashSync(password, 10);
 
-        // Insert the new user into the database
-        db.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword], (err, results) => {
-            if (err) throw err;
-            res.status(201).send('User registered successfully');
-        });
-    });
+    // Insert the new user into the database
+    const [insertResult] = await db.execute(
+      'INSERT INTO users (username, password) VALUES (?, ?)',
+      [username, hashedPassword]
+    );
+    
+    res.status(201).send('User registered successfully');
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Login endpoint
-app.post('/login', (req, res) => {
+// Login endpoint with async/await
+app.post('/login', async (req, res, next) => {
+  try {
     const { username, password } = req.body;
 
     // Fetch user from the database
-    db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
-        if (err) throw err;
-        if (results.length === 0) return res.status(400).send('User not found');
+    const [results] = await db.execute('SELECT * FROM users WHERE username = ?', [username]);
+    if (results.length === 0) return res.status(400).send('User not found');
 
-        const user = results[0];
+    const user = results[0];
 
-        // Compare the provided password with the stored hash
-        if (!bcrypt.compareSync(password, user.password)) {
-            return res.status(400).send('Invalid password');
-        }
+    // Compare the provided password with the stored hash
+    if (!bcrypt.compareSync(password, user.password)) {
+      return res.status(400).send('Invalid password');
+    }
 
-        // Generate a JWT token
-        const token = jwt.sign({ id: user.id }, '123456', { expiresIn: '1h' });
-        res.json({ token });
-    });
+    // Generate a JWT token
+    const token = jwt.sign(
+      { id: user.id },
+      process.env.JWT_SECRET || '123456',
+      { expiresIn: '1h' }
+    );
+    res.json({ token });
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Fetch orders endpoint
-app.get('/orders', authenticateToken, (req, res) => {
+// Fetch orders endpoint with async/await
+app.get('/orders', authenticateToken, async (req, res, next) => {
+  try {
     const userId = req.user.id;
 
     // Fetch orders for the logged-in user
-    db.query('SELECT * FROM orders WHERE user_id = ?', [userId], (err, results) => {
-        if (err) throw err;
-        res.json(results);
-    });
+    const [results] = await db.execute('SELECT * FROM orders WHERE user_id = ?', [userId]);
+    res.json(results);
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Create order endpoint
-app.post('/orders', authenticateToken, (req, res) => {
+// Create order endpoint with async/await
+app.post('/orders', authenticateToken, async (req, res, next) => {
+  try {
     const { order_details } = req.body;
     const userId = req.user.id;
 
     // Insert the new order into the database
-    db.query('INSERT INTO orders (user_id, order_details) VALUES (?, ?)', [userId, order_details], (err, results) => {
-        if (err) throw err;
-        res.json({ id: results.insertId, user_id: userId, order_details });
-    });
+    const [results] = await db.execute(
+      'INSERT INTO orders (user_id, order_details) VALUES (?, ?)',
+      [userId, order_details]
+    );
+    
+    res.json({ id: results.insertId, user_id: userId, order_details });
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Update order endpoint
-app.put('/orders/:id', authenticateToken, (req, res) => {
+// Update order endpoint with async/await
+app.put('/orders/:id', authenticateToken, async (req, res, next) => {
+  try {
     const { order_details } = req.body;
     const orderId = req.params.id;
     const userId = req.user.id;
 
     // Update the order in the database
-    db.query('UPDATE orders SET order_details = ? WHERE id = ? AND user_id = ?', [order_details, orderId, userId], (err, results) => {
-        if (err) throw err;
-        if (results.affectedRows === 0) return res.status(404).send('Order not found');
-        res.json({ id: orderId, user_id: userId, order_details });
-    });
+    const [results] = await db.execute(
+      'UPDATE orders SET order_details = ? WHERE id = ? AND user_id = ?',
+      [order_details, orderId, userId]
+    );
+    
+    if (results.affectedRows === 0) {
+      return res.status(404).send('Order not found');
+    }
+    
+    res.json({ id: orderId, user_id: userId, order_details });
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Delete order endpoint
-app.delete('/orders/:id', authenticateToken, (req, res) => {
+// Delete order endpoint with async/await
+app.delete('/orders/:id', authenticateToken, async (req, res, next) => {
+  try {
     const orderId = req.params.id;
     const userId = req.user.id;
 
     // Delete the order from the database
-    db.query('DELETE FROM orders WHERE id = ? AND user_id = ?', [orderId, userId], (err, results) => {
-        if (err) throw err;
-        if (results.affectedRows === 0) return res.status(404).send('Order not found');
-        res.sendStatus(204);
-    });
+    const [results] = await db.execute(
+      'DELETE FROM orders WHERE id = ? AND user_id = ?',
+      [orderId, userId]
+    );
+    
+    if (results.affectedRows === 0) {
+      return res.status(404).send('Order not found');
+    }
+    
+    res.sendStatus(204);
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Start the server
-const PORT = 3000;
-app.listen(PORT, () => {
+// Vercel requires module.exports for serverless functions
+module.exports = app;
+
+// Only listen when not in Vercel environment
+if (process.env.VERCEL !== '1') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
-});
+  });
+}
