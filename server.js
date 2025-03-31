@@ -112,7 +112,6 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Login endpoint
 app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -121,18 +120,28 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
+    console.log('Login attempt for:', username);
+
+    // Add database query logging
+    console.log('Executing database query...');
     const [users] = await db.execute('SELECT * FROM users WHERE username = ?', [username]);
+    console.log('Query results:', users);
+
     if (users.length === 0) {
+      console.log('User not found:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = users[0];
+    console.log('User found, comparing passwords...');
     const passwordMatch = await bcrypt.compare(password, user.password);
-    
+    console.log('Password match result:', passwordMatch);
+
     if (!passwordMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    console.log('Generating JWT token...');
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET || '123456',
@@ -144,10 +153,19 @@ app.post('/login', async (req, res) => {
       user: { id: user.id, username: user.username }
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('FULL LOGIN ERROR:', {
+      message: error.message,
+      stack: error.stack,
+      rawError: error
+    });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      // Only show details in development
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
+
 
 // Order endpoints
 app.get('/orders', authenticateToken, async (req, res) => {
