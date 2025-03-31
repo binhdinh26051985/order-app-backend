@@ -1,3 +1,6 @@
+// Environment setup and error handling
+require('dotenv').config();
+
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
   if (process.env.NODE_ENV === 'production') {
@@ -7,6 +10,15 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
+});
+
+// Environment validation
+const requiredEnvVars = ['DB_HOST', 'DB_USER', 'DB_NAME', 'JWT_SECRET'];
+requiredEnvVars.forEach(env => {
+  if (!process.env[env]) {
+    console.error(`Missing required environment variable: ${env}`);
+    process.exit(1);
+  }
 });
 
 console.log('Starting server with environment:', {
@@ -20,29 +32,24 @@ console.log('Starting server with environment:', {
   DB_SSL: process.env.DB_SSL_CA ? 'configured' : 'missing'
 });
 
+// Dependencies
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
 const express = require('express');
-const mysql = require('mysql2/promise'); // Using promise-based API
+const mysql = require('mysql2/promise');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
 
-const app = express();
-
-// In server.js
-app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE']
-}));
-
+// SSL Configuration
+const sslConfig = process.env.DB_SSL_CA ? {
+  ca: fs.readFileSync(path.resolve(process.env.DB_SSL_CA))
+} : null;
 
 // Database connection pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
-  port: process.env.DB_PORT || 4000,
+  port: process.env.DB_PORT || 3306, // Default MySQL port
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
@@ -55,15 +62,32 @@ const pool = mysql.createPool({
   timezone: '+00:00'
 });
 
-// Test database connection
+// Express setup
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE']
+}));
+
+// Request logging
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
+
+// Database connection test
 async function testDatabaseConnection() {
   let connection;
   try {
     connection = await pool.getConnection();
     await connection.ping();
-    console.log('Successfully connected to TiDB database');
+    console.log('Successfully connected to database');
     
-    // Verify tables exist
     const [rows] = await connection.query(`
       SELECT COUNT(*) as table_count 
       FROM information_schema.tables 
@@ -72,38 +96,24 @@ async function testDatabaseConnection() {
     `, [process.env.DB_NAME]);
     
     if (rows[0].table_count !== 2) {
-      console.warn('Warning: Database tables might be missing');
+      console.warn('Warning: Some database tables might be missing');
     }
   } catch (err) {
     console.error('Database connection failed:', err);
-    if (process.env.NODE_ENV !== 'production') {
-      process.exit(1);
-    }
+    throw err; // Rethrow to be caught by startup handler
   } finally {
     if (connection) connection.release();
   }
 }
-testDatabaseConnection();
-
-// Enhanced error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ 
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-});
 
 // JWT authentication middleware
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  //const token = authHeader?.split(' ')[1];
   const token = authHeader && authHeader.split(' ')[1];
   
   if (!token) return res.status(401).json({ error: 'Authorization token required' });
 
-  jwt.verify(token, '123456', (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
       console.error('JWT verification error:', err);
       return res.status(403).json({ error: 'Invalid or expired token' });
@@ -113,7 +123,9 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Health check endpoint
+// Routes
+
+// Health check
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -131,7 +143,29 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// Register endpoint
+// Database connectivity test
+app.get('/db-check', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT 1 + 1 AS result');
+    res.json({ 
+      status: 'success',
+      database: 'connected',
+      result: rows[0].result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Database Connection Test Failed:', err);
+    res.status(500).json({
+      status: 'error',
+      database: 'disconnected',
+      error: err.message,
+      code: err.code,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// User registration
 app.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -160,7 +194,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Login endpoint
+// User login
 app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -188,7 +222,7 @@ app.post('/login', async (req, res) => {
     res.json({ 
       token,
       userId: user.id,
-      expiresIn: 3600 // 1 hour in seconds
+      expiresIn: 3600
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -197,14 +231,14 @@ app.post('/login', async (req, res) => {
 });
 
 // Order endpoints
-app.get('/orders', authenticateToken, (req, res) => {
-    const userId = req.user.id;
-
-    // Fetch orders for the logged-in user
-    db.query('SELECT * FROM orders WHERE user_id = ?', [userId], (err, results) => {
-        if (err) throw err;
-        res.json(results);
-    });
+app.get('/orders', authenticateToken, async (req, res) => {
+  try {
+    const [orders] = await pool.query('SELECT * FROM orders WHERE user_id = ?', [req.user.id]);
+    res.json(orders);
+  } catch (err) {
+    console.error('Get orders error:', err);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
 });
 
 app.post('/orders', authenticateToken, async (req, res) => {
@@ -231,46 +265,44 @@ app.post('/orders', authenticateToken, async (req, res) => {
   }
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+  console.error(`Error ${statusCode}:`, err.message, err.stack);
+  
+  res.status(statusCode).json({
+    error: err.message || 'Internal Server Error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
 // Server startup
 const PORT = process.env.PORT || 3000;
-if (process.env.NODE_ENV !== 'production') {
-  const server = app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  }).on('error', err => {
-    console.error('Server failed to start:', err);
-    process.exit(1);
-  });
 
-  // Graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM received. Shutting down gracefully');
-    server.close(() => {
-      console.log('Server closed');
-      pool.end();
-      process.exit(0);
-    });
-  });
-}
-// Add this endpoint to test database connectivity
-app.get('/db-check', async (req, res) => {
+async function startServer() {
   try {
-    const [rows] = await pool.query('SELECT 1 + 1 AS result');
-    res.json({ 
-      status: 'success',
-      database: 'connected',
-      result: rows[0].result,
-      timestamp: new Date().toISOString()
+    await testDatabaseConnection();
+    
+    const server = app.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+      console.log('SIGTERM received. Shutting down gracefully');
+      server.close(() => {
+        console.log('Server closed');
+        pool.end();
+        process.exit(0);
+      });
     });
   } catch (err) {
-    console.error('Database Connection Test Failed:', err);
-    res.status(500).json({
-      status: 'error',
-      database: 'disconnected',
-      error: err.message,
-      code: err.code,
-      timestamp: new Date().toISOString()
-    });
+    console.error('Server startup failed:', err);
+    process.exit(1);
   }
-});
+}
+
+startServer();
+
 // Export for Vercel serverless
 module.exports = app;
