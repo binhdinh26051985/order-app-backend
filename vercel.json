@@ -3,12 +3,16 @@
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": { 
+        "maxDuration": 10,
+        "includeFiles": ["**/*.js", "**/*.json"]
+      }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/api/(.*)",
       "dest": "server.js"
     }
   ]
