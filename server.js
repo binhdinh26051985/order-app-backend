@@ -220,12 +220,11 @@ app.put('/orders/:id', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { order_details } = req.body;
 
-    // Validate input
     if (!order_details) {
       return res.status(400).json({ error: 'Order details are required' });
     }
 
-    // Check if order exists and belongs to user
+    // Check ownership
     const [existing] = await dbPool.execute(
       'SELECT id FROM orders WHERE id = ? AND user_id = ?',
       [orderId, userId]
@@ -235,13 +234,13 @@ app.put('/orders/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Order not found or access denied' });
     }
 
-    // Update the order
-    const [result] = await dbPool.execute(
-      'UPDATE orders SET order_details = ?, updated_at = NOW() WHERE id = ?',
+    // Update without updated_at
+    await dbPool.execute(
+      'UPDATE orders SET order_details = ? WHERE id = ?',
       [order_details, orderId]
     );
 
-    // Return the updated order
+    // Return updated order
     const [updatedOrder] = await dbPool.execute(
       'SELECT * FROM orders WHERE id = ?',
       [orderId]
@@ -249,7 +248,7 @@ app.put('/orders/:id', authenticateToken, async (req, res) => {
 
     res.json(updatedOrder[0]);
   } catch (err) {
-    console.error('Update order error:', err);
+    console.error('Update error:', err);
     res.status(500).json({ 
       error: 'Failed to update order',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
