@@ -213,6 +213,86 @@ app.get('/orders', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+// PUT (Edit) Order Endpoint
+app.put('/orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const userId = req.user.id;
+    const { order_details } = req.body;
+
+    // Validate input
+    if (!order_details) {
+      return res.status(400).json({ error: 'Order details are required' });
+    }
+
+    // Check if order exists and belongs to user
+    const [existing] = await dbPool.execute(
+      'SELECT id FROM orders WHERE id = ? AND user_id = ?',
+      [orderId, userId]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Order not found or access denied' });
+    }
+
+    // Update the order
+    const [result] = await dbPool.execute(
+      'UPDATE orders SET order_details = ?, updated_at = NOW() WHERE id = ?',
+      [order_details, orderId]
+    );
+
+    // Return the updated order
+    const [updatedOrder] = await dbPool.execute(
+      'SELECT * FROM orders WHERE id = ?',
+      [orderId]
+    );
+
+    res.json(updatedOrder[0]);
+  } catch (err) {
+    console.error('Update order error:', err);
+    res.status(500).json({ 
+      error: 'Failed to update order',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// DELETE Order Endpoint
+app.delete('/orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const userId = req.user.id;
+
+    // Check if order exists and belongs to user
+    const [existing] = await dbPool.execute(
+      'SELECT id FROM orders WHERE id = ? AND user_id = ?',
+      [orderId, userId]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Order not found or access denied' });
+    }
+
+    // Delete the order
+    const [result] = await dbPool.execute(
+      'DELETE FROM orders WHERE id = ?',
+      [orderId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.status(204).end(); // No content response for successful deletion
+  } catch (err) {
+    console.error('Delete order error:', err);
+    res.status(500).json({ 
+      error: 'Failed to delete order',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
 
 app.post('/orders', authenticateToken, async (req, res) => {
   try {
