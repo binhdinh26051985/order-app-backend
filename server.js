@@ -15,7 +15,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS Configuration
 const allowedOrigins = [
-  'http://localhost:5173',
+  'https://loginfrontend-one.vercel.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
