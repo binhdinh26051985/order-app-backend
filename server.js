@@ -92,6 +92,44 @@ const initializeDatabase = async () => {
 // Initialize database immediately
 initializeDatabase();
 
+// Upload endpoint
+app.post('/upload', upload.single('image'), async (req, res) => {
+  try {
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'node_uploads'
+    });
+
+    // Save to database
+    const [dbResult] = await pool.execute(
+      'INSERT INTO images (title, cloudinary_url, cloudinary_id) VALUES (?, ?, ?)',
+      [req.body.title, result.secure_url, result.public_id]
+    );
+
+    res.status(201).json({
+      id: dbResult.insertId,
+      title: req.body.title,
+      cloudinary_url: result.secure_url
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Get all images
+app.get('/images', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM images ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: 'Failed to fetch images' });
+  }
+});
+
+
+
 // JWT Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
