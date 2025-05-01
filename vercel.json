@@ -16,17 +16,17 @@
     },
     {
       "src": "/images",
-      "dest": "/api/images",
+      "dest": "/images",
       "methods": ["GET"]
     },
     {
       "src": "/user/images",
-      "dest": "/api/user/images",
+      "dest": "/user/images",
       "methods": ["GET"]
     },
     {
       "src": "/upload",
-      "dest": "/api/upload",
+      "dest": "/upload",
       "methods": ["POST"]
     }
   ]
