@@ -92,44 +92,6 @@ const initializeDatabase = async () => {
 // Initialize database immediately
 initializeDatabase();
 
-// Upload endpoint
-app.post('/upload', upload.single('image'), async (req, res) => {
-  try {
-    // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: 'node_uploads'
-    });
-
-    // Save to database
-    const [dbResult] = await pool.execute(
-      'INSERT INTO images (title, cloudinary_url, cloudinary_id) VALUES (?, ?, ?)',
-      [req.body.title, result.secure_url, result.public_id]
-    );
-
-    res.status(201).json({
-      id: dbResult.insertId,
-      title: req.body.title,
-      cloudinary_url: result.secure_url
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Failed to upload image' });
-  }
-});
-
-// Get all images
-app.get('/images', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT * FROM images ORDER BY created_at DESC');
-    res.json(rows);
-  } catch (error) {
-    console.error('Database error:', error);
-    res.status(500).json({ error: 'Failed to fetch images' });
-  }
-});
-
-
-
 // JWT Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -143,6 +105,78 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+// Upload endpoint - now protected with authentication
+app.post('/upload', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'node_uploads'
+    });
+
+    // Clean up the temporary file
+    fs.unlink(req.file.path, (err) => {
+      if (err) console.error('Error deleting temp file:', err);
+    });
+
+    // Save to database with user_id reference
+    const [dbResult] = await dbPool.execute(
+      'INSERT INTO images (user_id, title, cloudinary_url, cloudinary_id) VALUES (?, ?, ?, ?)',
+      [req.user.id, req.body.title, result.secure_url, result.public_id]
+    );
+
+    res.status(201).json({
+      id: dbResult.insertId,
+      title: req.body.title,
+      cloudinary_url: result.secure_url,
+      user_id: req.user.id
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    
+    // Clean up temp file if upload failed
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting temp file:', err);
+      });
+    }
+
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Get all images - optionally add authentication if you want user-specific images
+app.get('/images', async (req, res) => {
+  try {
+    // If you want user-specific images, use:
+    // const [rows] = await dbPool.query('SELECT * FROM images WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
+    
+    // For all images (public)
+    const [rows] = await dbPool.query('SELECT * FROM images ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: 'Failed to fetch images' });
+  }
+});
+
+// Get user's images
+app.get('/user/images', authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(
+      'SELECT * FROM images WHERE user_id = ? ORDER BY created_at DESC',
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: 'Failed to fetch user images' });
+  }
+});
 
 // Health Check Endpoint
 app.get('/health', async (req, res) => {
@@ -262,6 +296,7 @@ app.get('/orders', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 // PUT (Edit) Order Endpoint
 app.put('/orders/:id', authenticateToken, async (req, res) => {
   try {
@@ -340,7 +375,6 @@ app.delete('/orders/:id', authenticateToken, async (req, res) => {
     });
   }
 });
-
 
 app.post('/orders', authenticateToken, async (req, res) => {
   try {
