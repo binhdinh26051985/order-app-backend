@@ -13,6 +13,21 @@
     {
       "src": "/(.*)",
       "dest": "server.js"
+    },
+    {
+      "src": "/images",
+      "dest": "/api/images",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/user/images",
+      "dest": "/api/user/images",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/upload",
+      "dest": "/api/upload",
+      "methods": ["POST"]
     }
   ]
 }
