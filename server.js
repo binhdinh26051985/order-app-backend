@@ -10,7 +10,14 @@ const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+//const upload = multer({ dest: 'uploads/' });
+// Replace the disk storage with memory storage
+const upload = multer({
+  storage: multer.memoryStorage(), // Store files in memory
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit (adjust as needed)
+  }
+});
 
 // Middleware
 app.use(express.json());
