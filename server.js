@@ -185,6 +185,27 @@ app.get('/user/images', authenticateToken, async (req, res) => {
   }
 });
 
+// Add this to your server.js
+app.delete('/images/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cloudinary_id } = req.body;
+
+    // Delete from Cloudinary first
+    await cloudinary.uploader.destroy(cloudinary_id);
+
+    // Then delete from database
+    await dbPool.execute(
+      'DELETE FROM images WHERE id = ? AND user_id = ?',
+      [id, req.user.id]
+    );
+
+    res.status(204).end();
+  } catch (error) {
+    console.error('Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete image' });
+  }
+});
 // Health Check Endpoint
 app.get('/health', async (req, res) => {
   try {
