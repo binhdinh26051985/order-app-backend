@@ -336,6 +336,139 @@ app.post('/orders', authenticateToken, async (req, res) => {
   }
 });
 
+// Updated Image Upload with title
+app.post('/upload-image', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    if (!req.file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ error: 'Only image files are allowed' });
+    }
+
+    const { title } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    const fileBase64 = req.file.buffer.toString('base64');
+    const fileUri = `data:${req.file.mimetype};base64,${fileBase64}`;
+
+    const result = await cloudinary.uploader.upload(fileUri, {
+      folder: `user_uploads/${req.user.id}`,
+      public_id: `img_${Date.now()}`,
+      overwrite: true,
+      resource_type: 'auto'
+    });
+
+    await dbPool.execute(
+      'INSERT INTO user_images (user_id, title, cloudinary_id, image_url) VALUES (?, ?, ?, ?)',
+      [req.user.id, title, result.public_id, result.secure_url]
+    );
+
+    res.status(201).json({
+      message: 'Image uploaded successfully',
+      title,
+      imageUrl: result.secure_url,
+      publicId: result.public_id
+    });
+  } catch (err) {
+    console.error('Image upload error:', err);
+    res.status(500).json({ 
+      error: 'Failed to upload image',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// Updated Get User's Images (now includes title)
+app.get('/images', authenticateToken, async (req, res) => {
+  try {
+    const [images] = await dbPool.execute(
+      'SELECT id, title, cloudinary_id, image_url FROM user_images WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    res.json(images);
+  } catch (err) {
+    console.error('Get images error:', err);
+    res.status(500).json({ 
+      error: 'Failed to fetch images',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// Updated Delete Endpoint (unchanged, but now includes title in response)
+app.delete('/images/:id', authenticateToken, async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    const userId = req.user.id;
+
+    const [images] = await dbPool.execute(
+      'SELECT title, cloudinary_id FROM user_images WHERE id = ? AND user_id = ?',
+      [imageId, userId]
+    );
+
+    if (images.length === 0) {
+      return res.status(404).json({ error: 'Image not found or access denied' });
+    }
+
+    const { title, cloudinary_id } = images[0];
+
+    await cloudinary.uploader.destroy(cloudinary_id);
+    await dbPool.execute(
+      'DELETE FROM user_images WHERE id = ? AND user_id = ?',
+      [imageId, userId]
+    );
+
+    res.json({ 
+      message: 'Image deleted successfully',
+      deletedTitle: title
+    });
+  } catch (err) {
+    console.error('Delete image error:', err);
+    res.status(500).json({ 
+      error: 'Failed to delete image',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// Add new endpoint to update title
+app.put('/images/:id/title', authenticateToken, async (req, res) => {
+  try {
+    const imageId = req.params.id;
+    const userId = req.user.id;
+    const { title } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    const [result] = await dbPool.execute(
+      'UPDATE user_images SET title = ? WHERE id = ? AND user_id = ?',
+      [title, imageId, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Image not found or access denied' });
+    }
+
+    res.json({ 
+      message: 'Title updated successfully',
+      newTitle: title
+    });
+  } catch (err) {
+    console.error('Update title error:', err);
+    res.status(500).json({ 
+      error: 'Failed to update title',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
 // Error Handling Middleware
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
