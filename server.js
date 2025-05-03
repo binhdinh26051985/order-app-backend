@@ -30,17 +30,32 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
+//app.use(cors({
+  //origin: function (origin, callback) {
+    //if (!origin || allowedOrigins.includes(origin)) {
+      //callback(null, true);
+    //} else {
+      //callback(new Error('Not allowed by CORS'));
+    //}
+  //},
+  //methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  //credentials: true
+//}));
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.log('Blocked by CORS:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 
 // Cloudinary configuration
 cloudinary.config({
