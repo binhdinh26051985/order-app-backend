@@ -156,20 +156,14 @@ app.post('/upload', authenticateToken, upload.single('image'), async (req, res) 
   }
 });
 
-// Get all images - optionally add authentication if you want user-specific images
-app.get('/images', async (req, res) => {
-  try {
-    // If you want user-specific images, use:
-    // const [rows] = await dbPool.query('SELECT * FROM images WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
-    
-    // For all images (public)
-    const [rows] = await dbPool.query('SELECT * FROM images ORDER BY created_at DESC');
-    res.json(rows);
-  } catch (error) {
-    console.error('Database error:', error);
-    res.status(500).json({ error: 'Failed to fetch images' });
-  }
-});
+
+// Get images endpoint (without created_at)
+  app.get('/api/images', (req, res) => {
+    db.query('SELECT * FROM images', (err, results) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json(results);
+    });
+  });
 
 // Get user's images
 app.get('/user/images', authenticateToken, async (req, res) => {
